@@ -19,7 +19,26 @@ try {
 } catch (e) {
   console.log('Warning: solidity-coverage not available');
 }
-require('dotenv').config();
+// Load env vars per network: .env.develop for testnets, .env.production for mainnets
+const path = require('path');
+const dotenv = require('dotenv');
+
+function detectNetworkFromArgv() {
+  const idx = process.argv.indexOf('--network');
+  if (idx !== -1 && process.argv[idx + 1]) return process.argv[idx + 1];
+  return undefined;
+}
+
+const selectedNetwork = process.env.HARDHAT_NETWORK || detectNetworkFromArgv();
+const TESTNETS = new Set(['harmony_testnet', 'sepolia', 'bsc_testnet']);
+const MAINNETS = new Set(['harmony', 'mainnet', 'bsc']);
+
+let envFile = '.env';
+if (selectedNetwork && TESTNETS.has(selectedNetwork)) envFile = '.env.develop';
+if (selectedNetwork && MAINNETS.has(selectedNetwork)) envFile = '.env.production';
+
+dotenv.config({ path: path.resolve(__dirname, envFile) });
+console.log(`[env] Loaded ${envFile} for network: ${selectedNetwork ?? 'default'}`);
 
 // Try to require network helpers with fallback
 try {

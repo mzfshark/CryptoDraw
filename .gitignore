@@ -7,6 +7,7 @@
 .env
 .env.local
 .env.*.local
+.env.*
 
 # Keep template files (these are safe to commit). Ensure real secrets stay only in .env or local overrides.
 # .env.example

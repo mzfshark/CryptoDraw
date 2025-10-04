@@ -5,7 +5,8 @@ const { loadFixture } = require("@nomicfoundation/hardhat-network-helpers");
 describe("CryptoDraw Integration Tests (V2)", function () {
   // Full V2 system fixture
   async function deployV2Fixture() {
-    const [owner, operator, agent, user1, user2, user3] = await ethers.getSigners();
+    const [owner, operator, agent, user1, user2, user3] =
+      await ethers.getSigners();
 
     // Initial oracle: ONE = $2000 (18 decimals)
     const initialOnePrice = ethers.utils.parseEther("2000");
@@ -17,7 +18,9 @@ describe("CryptoDraw Integration Tests (V2)", function () {
     const ticketNFT = await TicketNFT.deploy();
 
     // Deploy CryptoDraw V2 (fully qualified name to avoid ambiguity)
-    const CryptoDraw = await ethers.getContractFactory("contracts/CryptoDrawV2.sol:CryptoDraw");
+    const CryptoDraw = await ethers.getContractFactory(
+      "contracts/CryptoDrawV2.sol:CryptoDraw",
+    );
     const cryptoDraw = await CryptoDraw.deploy(
       ticketNFT.address,
       priceOracle.address,
@@ -25,7 +28,7 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       owner.address, // prizeWallet
       owner.address, // projectFund
       owner.address, // grantFund
-      owner.address  // operationFund
+      owner.address, // operationFund
     );
 
     // Wire NFT to main contract
@@ -41,15 +44,36 @@ describe("CryptoDraw Integration Tests (V2)", function () {
     await cryptoDraw.setSupportedToken(ethers.constants.AddressZero, true);
 
     // Configure games: 0 = SuperSeven, 1 = EasyLotto
-    await cryptoDraw.setGameConfig(0, ethers.utils.parseEther("1"), 24 * 60 * 60, true);
-    await cryptoDraw.setGameConfig(1, ethers.utils.parseEther("2"), 7 * 24 * 60 * 60, true);
+    await cryptoDraw.setGameConfig(
+      0,
+      ethers.utils.parseEther("1"),
+      24 * 60 * 60,
+      true,
+    );
+    await cryptoDraw.setGameConfig(
+      1,
+      ethers.utils.parseEther("2"),
+      7 * 24 * 60 * 60,
+      true,
+    );
 
-    return { owner, operator, agent, user1, user2, user3, priceOracle, ticketNFT, cryptoDraw };
+    return {
+      owner,
+      operator,
+      agent,
+      user1,
+      user2,
+      user3,
+      priceOracle,
+      ticketNFT,
+      cryptoDraw,
+    };
   }
 
   describe("Complete Lottery Flow - EasyLotto", function () {
     it("executes full draw cycle and finalizes with winning numbers", async function () {
-      const { cryptoDraw, ticketNFT, operator, user1, user2, user3 } = await loadFixture(deployV2Fixture);
+      const { cryptoDraw, ticketNFT, operator, user1, user2, user3 } =
+        await loadFixture(deployV2Fixture);
 
       const gameType = 1; // EASYLOTTO
       const requiredOne = ethers.utils.parseEther("0.001"); // $2 in ONE at $2000
@@ -59,33 +83,39 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       const n2 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 25];
       const n3 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 17, 18, 19];
 
-      await cryptoDraw.connect(user1).buyTicket(
-        gameType,
-        n1,
-        1,
-        ethers.constants.AddressZero,
-        requiredOne,
-        ethers.constants.AddressZero,
-        { value: requiredOne }
-      );
-      await cryptoDraw.connect(user2).buyTicket(
-        gameType,
-        n2,
-        1,
-        ethers.constants.AddressZero,
-        requiredOne,
-        ethers.constants.AddressZero,
-        { value: requiredOne }
-      );
-      await cryptoDraw.connect(user3).buyTicket(
-        gameType,
-        n3,
-        1,
-        ethers.constants.AddressZero,
-        requiredOne,
-        ethers.constants.AddressZero,
-        { value: requiredOne }
-      );
+      await cryptoDraw
+        .connect(user1)
+        .buyTicket(
+          gameType,
+          n1,
+          1,
+          ethers.constants.AddressZero,
+          requiredOne,
+          ethers.constants.AddressZero,
+          { value: requiredOne },
+        );
+      await cryptoDraw
+        .connect(user2)
+        .buyTicket(
+          gameType,
+          n2,
+          1,
+          ethers.constants.AddressZero,
+          requiredOne,
+          ethers.constants.AddressZero,
+          { value: requiredOne },
+        );
+      await cryptoDraw
+        .connect(user3)
+        .buyTicket(
+          gameType,
+          n3,
+          1,
+          ethers.constants.AddressZero,
+          requiredOne,
+          ethers.constants.AddressZero,
+          { value: requiredOne },
+        );
 
       const drawId = await cryptoDraw.getCurrentDrawId(gameType);
       expect(drawId).to.equal(1);
@@ -96,35 +126,42 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       expect(await ticketNFT.ownerOf(2)).to.equal(user3.address);
 
       // Close and complete draw with manual seed
-      await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](gameType, drawId, 123456);
+      await cryptoDraw
+        .connect(operator)
+        ["closeDraw(uint8,uint32,uint256)"](gameType, drawId, 123456);
       const draw = await cryptoDraw.getDraw(gameType, drawId);
       expect(draw.status).to.equal(4); // COMPLETED
       expect(draw.winningNumbersPacked).to.not.equal(0);
     });
 
     it("handles multi-round ticket", async function () {
-      const { cryptoDraw, ticketNFT, operator, user1 } = await loadFixture(deployV2Fixture);
+      const { cryptoDraw, ticketNFT, operator, user1 } =
+        await loadFixture(deployV2Fixture);
 
       const gameType = 1; // EASYLOTTO
       const rounds = 3;
       const requiredOne = ethers.utils.parseEther("0.003"); // 3 * $2 / $2000
 
       const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-      await cryptoDraw.connect(user1).buyTicket(
-        gameType,
-        numbers,
-        rounds,
-        ethers.constants.AddressZero,
-        requiredOne,
-        ethers.constants.AddressZero,
-        { value: requiredOne }
-      );
+      await cryptoDraw
+        .connect(user1)
+        .buyTicket(
+          gameType,
+          numbers,
+          rounds,
+          ethers.constants.AddressZero,
+          requiredOne,
+          ethers.constants.AddressZero,
+          { value: requiredOne },
+        );
 
       const t = await ticketNFT.getTicket(0);
       expect(t.roundsBought).to.equal(rounds);
 
       const drawId = await cryptoDraw.getCurrentDrawId(gameType);
-      await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](gameType, drawId, 789);
+      await cryptoDraw
+        .connect(operator)
+        ["closeDraw(uint8,uint32,uint256)"](gameType, drawId, 789);
       const after = await cryptoDraw.getDraw(gameType, drawId);
       expect(after.status).to.equal(4);
     });
@@ -137,21 +174,26 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       const gameType = 1;
       const requiredOne = ethers.utils.parseEther("0.001");
 
-      await cryptoDraw.connect(user1).buyTicket(
-        gameType,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-        1,
-        ethers.constants.AddressZero,
-        requiredOne,
-        agent.address,
-        { value: requiredOne }
-      );
+      await cryptoDraw
+        .connect(user1)
+        .buyTicket(
+          gameType,
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+          1,
+          ethers.constants.AddressZero,
+          requiredOne,
+          agent.address,
+          { value: requiredOne },
+        );
 
       const commission = await cryptoDraw.agentCommissions(agent.address);
       expect(commission).to.be.gt(0);
 
       // Fund contract to enable withdrawal
-      await user1.sendTransaction({ to: cryptoDraw.address, value: commission });
+      await user1.sendTransaction({
+        to: cryptoDraw.address,
+        value: commission,
+      });
 
       const before = await ethers.provider.getBalance(agent.address);
       await cryptoDraw.connect(agent).withdrawAgentCommission();
@@ -161,55 +203,67 @@ describe("CryptoDraw Integration Tests (V2)", function () {
     });
 
     it("prevents suspended agent from earning commission", async function () {
-      const { cryptoDraw, owner, agent, user1 } = await loadFixture(deployV2Fixture);
+      const { cryptoDraw, owner, agent, user1 } =
+        await loadFixture(deployV2Fixture);
 
       await cryptoDraw.connect(owner).setSuspendedAgent(agent.address, true);
       const requiredOne = ethers.utils.parseEther("0.001");
       await expect(
-        cryptoDraw.connect(user1).buyTicket(
-          1,
-          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-          1,
-          ethers.constants.AddressZero,
-          requiredOne,
-          agent.address,
-          { value: requiredOne }
-        )
+        cryptoDraw
+          .connect(user1)
+          .buyTicket(
+            1,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            1,
+            ethers.constants.AddressZero,
+            requiredOne,
+            agent.address,
+            { value: requiredOne },
+          ),
       ).to.be.reverted;
     });
   });
 
   describe("Multi-Game Support", function () {
     it("operates EasyLotto and SuperSeven simultaneously", async function () {
-      const { cryptoDraw, operator, user1, user2 } = await loadFixture(deployV2Fixture);
+      const { cryptoDraw, operator, user1, user2 } =
+        await loadFixture(deployV2Fixture);
 
       const easyRequired = ethers.utils.parseEther("0.001"); // $2
       const superRequired = ethers.utils.parseEther("0.0005"); // $1
 
-      await cryptoDraw.connect(user1).buyTicket(
-        1,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-        1,
-        ethers.constants.AddressZero,
-        easyRequired,
-        ethers.constants.AddressZero,
-        { value: easyRequired }
-      );
-      await cryptoDraw.connect(user2).buyTicket(
-        0,
-        [1, 2, 3, 4, 5, 6, 7],
-        1,
-        ethers.constants.AddressZero,
-        superRequired,
-        ethers.constants.AddressZero,
-        { value: superRequired }
-      );
+      await cryptoDraw
+        .connect(user1)
+        .buyTicket(
+          1,
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+          1,
+          ethers.constants.AddressZero,
+          easyRequired,
+          ethers.constants.AddressZero,
+          { value: easyRequired },
+        );
+      await cryptoDraw
+        .connect(user2)
+        .buyTicket(
+          0,
+          [1, 2, 3, 4, 5, 6, 7],
+          1,
+          ethers.constants.AddressZero,
+          superRequired,
+          ethers.constants.AddressZero,
+          { value: superRequired },
+        );
 
       const easyDrawId = await cryptoDraw.getCurrentDrawId(1);
       const superDrawId = await cryptoDraw.getCurrentDrawId(0);
 
-      await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](1, easyDrawId, 111);
-      await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](0, superDrawId, 222);
+      await cryptoDraw
+        .connect(operator)
+        ["closeDraw(uint8,uint32,uint256)"](1, easyDrawId, 111);
+      await cryptoDraw
+        .connect(operator)
+        ["closeDraw(uint8,uint32,uint256)"](0, superDrawId, 222);
 
       const easy = await cryptoDraw.getDraw(1, easyDrawId);
       const sup = await cryptoDraw.getDraw(0, superDrawId);
@@ -220,42 +274,51 @@ describe("CryptoDraw Integration Tests (V2)", function () {
 
   describe("Prize Distribution Integration", function () {
     it("closes draw with multiple tickets without reverting", async function () {
-      const { cryptoDraw, operator, user1, user2, user3 } = await loadFixture(deployV2Fixture);
+      const { cryptoDraw, operator, user1, user2, user3 } =
+        await loadFixture(deployV2Fixture);
 
       const gameType = 1;
       const required = ethers.utils.parseEther("0.001");
 
-      await cryptoDraw.connect(user1).buyTicket(
-        gameType,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-        1,
-        ethers.constants.AddressZero,
-        required,
-        ethers.constants.AddressZero,
-        { value: required }
-      );
-      await cryptoDraw.connect(user2).buyTicket(
-        gameType,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 25],
-        1,
-        ethers.constants.AddressZero,
-        required,
-        ethers.constants.AddressZero,
-        { value: required }
-      );
-      await cryptoDraw.connect(user3).buyTicket(
-        gameType,
-        [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 1, 2, 3, 4, 5],
-        1,
-        ethers.constants.AddressZero,
-        required,
-        ethers.constants.AddressZero,
-        { value: required }
-      );
+      await cryptoDraw
+        .connect(user1)
+        .buyTicket(
+          gameType,
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+          1,
+          ethers.constants.AddressZero,
+          required,
+          ethers.constants.AddressZero,
+          { value: required },
+        );
+      await cryptoDraw
+        .connect(user2)
+        .buyTicket(
+          gameType,
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 25],
+          1,
+          ethers.constants.AddressZero,
+          required,
+          ethers.constants.AddressZero,
+          { value: required },
+        );
+      await cryptoDraw
+        .connect(user3)
+        .buyTicket(
+          gameType,
+          [16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 1, 2, 3, 4, 5],
+          1,
+          ethers.constants.AddressZero,
+          required,
+          ethers.constants.AddressZero,
+          { value: required },
+        );
 
       const drawId = await cryptoDraw.getCurrentDrawId(gameType);
       await expect(
-        cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](gameType, drawId, 333)
+        cryptoDraw
+          .connect(operator)
+          ["closeDraw(uint8,uint32,uint256)"](gameType, drawId, 333),
       ).to.not.be.reverted;
       const d = await cryptoDraw.getDraw(gameType, drawId);
       expect(d.status).to.equal(4);
@@ -266,7 +329,7 @@ describe("CryptoDraw Integration Tests (V2)", function () {
     it("prevents unauthorized access to closing draw", async function () {
       const { cryptoDraw, user1 } = await loadFixture(deployV2Fixture);
       await expect(
-        cryptoDraw.connect(user1)['closeDraw(uint8,uint32,uint256)'](1, 1, 1)
+        cryptoDraw.connect(user1)["closeDraw(uint8,uint32,uint256)"](1, 1, 1),
       ).to.be.reverted;
     });
 
@@ -275,15 +338,17 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       await cryptoDraw.connect(owner).pause();
       const required = ethers.utils.parseEther("0.001");
       await expect(
-        cryptoDraw.connect(user1).buyTicket(
-          1,
-          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-          1,
-          ethers.constants.AddressZero,
-          required,
-          ethers.constants.AddressZero,
-          { value: required }
-        )
+        cryptoDraw
+          .connect(user1)
+          .buyTicket(
+            1,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            1,
+            ethers.constants.AddressZero,
+            required,
+            ethers.constants.AddressZero,
+            { value: required },
+          ),
       ).to.be.revertedWith("Pausable: paused");
     });
   });
@@ -292,15 +357,17 @@ describe("CryptoDraw Integration Tests (V2)", function () {
     it("uses reasonable gas for ticket purchase", async function () {
       const { cryptoDraw, user1 } = await loadFixture(deployV2Fixture);
       const required = ethers.utils.parseEther("0.001");
-      const tx = await cryptoDraw.connect(user1).buyTicket(
-        1,
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-        1,
-        ethers.constants.AddressZero,
-        required,
-        ethers.constants.AddressZero,
-        { value: required }
-      );
+      const tx = await cryptoDraw
+        .connect(user1)
+        .buyTicket(
+          1,
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+          1,
+          ethers.constants.AddressZero,
+          required,
+          ethers.constants.AddressZero,
+          { value: required },
+        );
       const receipt = await tx.wait();
       expect(receipt.gasUsed).to.be.lt(500000);
     });
@@ -310,15 +377,17 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       const required = ethers.utils.parseEther("0.001");
       const uses = [];
       for (let i = 0; i < 3; i++) {
-        const tx = await cryptoDraw.connect(user1).buyTicket(
-          1,
-          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
-          1,
-          ethers.constants.AddressZero,
-          required,
-          ethers.constants.AddressZero,
-          { value: required }
-        );
+        const tx = await cryptoDraw
+          .connect(user1)
+          .buyTicket(
+            1,
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+            1,
+            ethers.constants.AddressZero,
+            required,
+            ethers.constants.AddressZero,
+            { value: required },
+          );
         const rc = await tx.wait();
         uses.push(rc.gasUsed);
       }
@@ -332,7 +401,9 @@ describe("CryptoDraw Integration Tests (V2)", function () {
       const { cryptoDraw, operator } = await loadFixture(deployV2Fixture);
       // No draw created yet for SuperSeven (0)
       await expect(
-        cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](0, 1, 1)
+        cryptoDraw
+          .connect(operator)
+          ["closeDraw(uint8,uint32,uint256)"](0, 1, 1),
       ).to.be.reverted;
     });
 
@@ -347,8 +418,8 @@ describe("CryptoDraw Integration Tests (V2)", function () {
           ethers.constants.AddressZero,
           required,
           ethers.constants.AddressZero,
-          { value: required }
-        )
+          { value: required },
+        ),
       ).to.be.reverted;
     });
   });

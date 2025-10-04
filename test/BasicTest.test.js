@@ -12,9 +12,9 @@ describe("Basic Test", function () {
     const TicketNFT = await ethers.getContractFactory("TicketNFT");
     const ticketNFT = await TicketNFT.deploy();
     await ticketNFT.deployed();
-    
+
     expect(ticketNFT.address).to.match(/^0x[a-fA-F0-9]{40}$/);
-  expect(await ticketNFT.name()).to.equal("CryptoDraw Ticket");
+    expect(await ticketNFT.name()).to.equal("CryptoDraw Ticket");
     expect(await ticketNFT.symbol()).to.equal("CDRAW");
   });
 });

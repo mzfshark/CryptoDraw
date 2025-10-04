@@ -11,18 +11,18 @@ describe("TicketNFT Basic Tests", function () {
 
   beforeEach(async function () {
     [owner, user1, user2] = await ethers.getSigners();
-    
+
     const TicketNFT = await ethers.getContractFactory("TicketNFT");
     ticketNFT = await TicketNFT.deploy();
     await ticketNFT.deployed();
-    
-  // Configurar o endereço do owner como contrato CryptoDraw para permitir mint nos testes
-  await ticketNFT.setCryptoDrawAddress(owner.address);
+
+    // Configurar o endereço do owner como contrato CryptoDraw para permitir mint nos testes
+    await ticketNFT.setCryptoDrawAddress(owner.address);
   });
 
   describe("Deployment", function () {
     it("Should set the right owner", async function () {
-  expect(await ticketNFT.owner()).to.equal(owner.address);
+      expect(await ticketNFT.owner()).to.equal(owner.address);
     });
 
     it("Should set the correct name and symbol", async function () {
@@ -31,7 +31,7 @@ describe("TicketNFT Basic Tests", function () {
     });
 
     it("Should start with zero current token ID", async function () {
-  // TicketNFT has no totalSupply, but we can verify it starts from tokenId 0
+      // TicketNFT has no totalSupply, but we can verify it starts from tokenId 0
       expect(await ticketNFT.owner()).to.equal(owner.address);
     });
   });
@@ -39,12 +39,18 @@ describe("TicketNFT Basic Tests", function () {
   describe("Minting", function () {
     it("Should mint NFT to user", async function () {
       const gameType = 1; // EASYLOTTO
-  const numbersPacked = 12345; // Numbers packed into uint32
+      const numbersPacked = 12345; // Numbers packed into uint32
       const drawRound = 1;
       const rounds = 1;
 
-      await ticketNFT.mint(user1.address, gameType, numbersPacked, drawRound, rounds);
-      
+      await ticketNFT.mint(
+        user1.address,
+        gameType,
+        numbersPacked,
+        drawRound,
+        rounds,
+      );
+
       expect(await ticketNFT.ownerOf(0)).to.equal(user1.address);
     });
 
@@ -55,24 +61,32 @@ describe("TicketNFT Basic Tests", function () {
       const rounds = 1;
 
       await expect(
-        ticketNFT.connect(user1).mint(user2.address, gameType, numbersPacked, drawRound, rounds)
-  ).to.be.reverted; // onlyCryptoDraw()
+        ticketNFT
+          .connect(user1)
+          .mint(user2.address, gameType, numbersPacked, drawRound, rounds),
+      ).to.be.reverted; // onlyCryptoDraw()
     });
   });
 
   describe("Token Data", function () {
     beforeEach(async function () {
       const gameType = 1; // EASYLOTTO
-  const numbersPacked = 12345; // Packed numbers
+      const numbersPacked = 12345; // Packed numbers
       const drawRound = 1;
       const rounds = 1;
 
-      await ticketNFT.mint(user1.address, gameType, numbersPacked, drawRound, rounds);
+      await ticketNFT.mint(
+        user1.address,
+        gameType,
+        numbersPacked,
+        drawRound,
+        rounds,
+      );
     });
 
     it("Should return correct ticket data", async function () {
       const ticketData = await ticketNFT.getTicket(0);
-      
+
       expect(ticketData.game).to.equal(1);
       expect(ticketData.drawRound).to.equal(1);
       expect(ticketData.roundsBought).to.equal(1);
@@ -91,16 +105,22 @@ describe("TicketNFT Basic Tests", function () {
       const drawRound = 1;
       const rounds = 1;
 
-      await ticketNFT.mint(user1.address, gameType, numbersPacked, drawRound, rounds);
+      await ticketNFT.mint(
+        user1.address,
+        gameType,
+        numbersPacked,
+        drawRound,
+        rounds,
+      );
     });
 
     it("Should revert transfers (soulbound)", async function () {
       await expect(
-        ticketNFT.connect(user1).transferFrom(user1.address, user2.address, 0)
+        ticketNFT.connect(user1).transferFrom(user1.address, user2.address, 0),
       ).to.be.reverted;
       await ticketNFT.connect(user1).approve(user2.address, 0);
       await expect(
-        ticketNFT.connect(user2).transferFrom(user1.address, user2.address, 0)
+        ticketNFT.connect(user2).transferFrom(user1.address, user2.address, 0),
       ).to.be.reverted;
     });
   });
@@ -112,7 +132,13 @@ describe("TicketNFT Basic Tests", function () {
       const drawRound = 1;
       const rounds = 1;
 
-      await ticketNFT.mint(user1.address, gameType, numbersPacked, drawRound, rounds);
+      await ticketNFT.mint(
+        user1.address,
+        gameType,
+        numbersPacked,
+        drawRound,
+        rounds,
+      );
     });
 
     it("Should only allow CryptoDraw to burn (reverts in this test)", async function () {
