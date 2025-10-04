@@ -1284,9 +1284,9 @@ describe("CryptoDrawV2 Contract", function () {
     });
 
     it('setWallets updates all non-zero wallets (treasury, prize, project, grant, operation)', async function () {
-      const { cryptoDraw, owner, user1, user2, user3, user4 } = await baseFixture();
-      // use distinct addresses for each wallet
-      const [treasury, prize, project, grant, operation] = [user1.address, user2.address, user3.address, user4.address, owner.address];
+      const { cryptoDraw, owner, operator, agent, user1, user2 } = await baseFixture();
+      // use distinct addresses for each wallet from available signers
+      const [treasury, prize, project, grant, operation] = [user1.address, user2.address, operator.address, agent.address, owner.address];
       await cryptoDraw.connect(owner).setWallets(treasury, prize, project, grant, operation);
       expect(await cryptoDraw.treasuryWallet()).to.equal(treasury);
       expect(await cryptoDraw.prizeWallet()).to.equal(prize);
