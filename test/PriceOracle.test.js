@@ -357,4 +357,25 @@ describe("PriceOracle - Extended Coverage (merged)", function () {
     usd = await priceOracle.convertToUSD(mockToken.address, ethers.utils.parseEther("1"));
     expect(usd).to.equal(ethers.utils.parseEther("10"));
   });
+
+  it("BAND pricing path with token decimals < 18 (6 decimals)", async function () {
+    // Token with 6 decimals, manual price $10
+    const Token6 = await ethers.getContractFactory("MockERC20");
+    const token6 = await Token6.deploy("USDC Mock", "USDC", 6);
+    await priceOracle.addToken(token6.address, 6, ethers.utils.parseEther("10"));
+
+    // Configure BandMock with price = $2
+    const BandMock = await ethers.getContractFactory("BandMock");
+    const band = await BandMock.deploy();
+    await priceOracle.setBandFeed(token6.address, band.address, "USDC", "USD");
+
+    // 1.00 token (1e6) => $2 using BAND price
+    const oneToken6 = ethers.utils.parseUnits("1", 6);
+    const usd = await priceOracle.convertToUSD(token6.address, oneToken6);
+    expect(usd).to.equal(ethers.utils.parseEther("2"));
+
+    // $2 USD => 1.00 token (1e6)
+    const back = await priceOracle.convertFromUSD(token6.address, ethers.utils.parseEther("2"));
+    expect(back).to.equal(oneToken6);
+  });
 });
