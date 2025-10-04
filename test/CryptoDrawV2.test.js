@@ -97,6 +97,25 @@ describe("CryptoDrawV2 Contract", function () {
       const { cryptoDrawV2 } = await loadFixture(deployCryptoDrawV2Fixture);
       expect(await cryptoDrawV2.paused()).to.be.false;
     });
+
+    it("Constructor reverts with ZeroAddress when critical addresses are zero", async function () {
+      const TicketNFT = await ethers.getContractFactory("TicketNFT");
+      const ticketNFT = await TicketNFT.deploy();
+      const PriceOracle = await ethers.getContractFactory("PriceOracle");
+      const priceOracle = await PriceOracle.deploy(ethers.utils.parseEther("2000"));
+      const CryptoDraw = await ethers.getContractFactory('contracts/CryptoDrawV2.sol:CryptoDraw');
+      await expect(
+        CryptoDraw.deploy(
+          ticketNFT.address,
+          ethers.constants.AddressZero, // priceOracle zero
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero,
+          ethers.constants.AddressZero
+        )
+      ).to.be.revertedWithCustomError(CryptoDraw, 'ZeroAddress');
+    });
   });
 
   describe("Game Configuration", function () {
@@ -1441,6 +1460,49 @@ describe("CryptoDrawV2 Contract", function () {
       await (await cryptoDraw.connect(user1).claimPrize(tid)).wait();
       const owed5 = await cryptoDraw.withdrawableBalances(user1.address);
       expect(owed5).to.be.gt(0);
+    });
+
+    it('SuperSeven prize branches for 4 and 3 matches', async function () {
+      const { cryptoDraw, operator, user1, owner } = await baseFixture();
+      await cryptoDraw.setGameConfig(0, ethers.utils.parseEther('1'), 86400, true);
+      const pay = ethers.utils.parseEther('0.0005');
+
+      // 4 matches (replace 3 digits)
+      await cryptoDraw.connect(operator).createDraw(0);
+      const drawId1 = await cryptoDraw.getCurrentDrawId(0);
+      const rand1 = ethers.BigNumber.from('333333');
+      const win1 = computeSuperSevenWinning(rand1, drawId1);
+      const pick4 = [...win1];
+      pick4[0] = (win1[0] + 1) % 10;
+      pick4[1] = (win1[1] + 2) % 10;
+      pick4[2] = (win1[2] + 3) % 10;
+      let tx = await cryptoDraw.connect(user1).buyTicket(0, pick4, 1, ethers.constants.AddressZero, pay, ethers.constants.AddressZero, { value: pay });
+      let rc = await tx.wait();
+      let tid = rc.events.find(e => e.event === 'TicketPurchased').args.ticketId;
+      await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](0, drawId1, rand1);
+      await (await cryptoDraw.connect(user1).claimPrize(tid)).wait();
+      const owed4 = await cryptoDraw.withdrawableBalances(user1.address);
+      expect(owed4).to.be.gt(0);
+      await owner.sendTransaction({ to: cryptoDraw.address, value: owed4 });
+      await cryptoDraw.connect(user1).withdrawPrize();
+
+      // 3 matches (replace 4 digits)
+      await cryptoDraw.connect(operator).createDraw(0);
+      const drawId2 = await cryptoDraw.getCurrentDrawId(0);
+      const rand2 = ethers.BigNumber.from('444444');
+      const win2 = computeSuperSevenWinning(rand2, drawId2);
+      const pick3 = [...win2];
+      pick3[0] = (win2[0] + 1) % 10;
+      pick3[1] = (win2[1] + 2) % 10;
+      pick3[2] = (win2[2] + 3) % 10;
+      pick3[3] = (win2[3] + 4) % 10;
+      tx = await cryptoDraw.connect(user1).buyTicket(0, pick3, 1, ethers.constants.AddressZero, pay, ethers.constants.AddressZero, { value: pay });
+      rc = await tx.wait();
+      tid = rc.events.find(e => e.event === 'TicketPurchased').args.ticketId;
+      await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](0, drawId2, rand2);
+      await (await cryptoDraw.connect(user1).claimPrize(tid)).wait();
+      const owed3 = await cryptoDraw.withdrawableBalances(user1.address);
+      expect(owed3).to.be.gt(0);
     });
   });
 });
