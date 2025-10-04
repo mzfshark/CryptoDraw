@@ -149,9 +149,9 @@ describe("PriceOracle - Extended Coverage (merged)", function () {
     const Token30 = await ethers.getContractFactory("MockERC20");
     const token30 = await Token30.deploy("Max Decimals", "MD", 30);
     await priceOracle.addToken(token30.address, 30, ethers.utils.parseEther("1")); // $1
-    // $1 in 18 decimals to token with 30 decimals at price $1 => 10^(30-18)
+    // $1 in 18 decimals to token with 30 decimals at price $1 => (1e18 * 1e12) = 1e30
     const amount = await priceOracle.convertFromUSD(token30.address, ethers.utils.parseEther("1"));
-    expect(amount).to.equal(ethers.BigNumber.from("1000000000000")); // 10^12
+    expect(amount).to.equal(ethers.BigNumber.from("1000000000000000000000000000000")); // 1e30
   });
 
   it("price update edge cases", async function () {
