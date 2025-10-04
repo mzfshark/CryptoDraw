@@ -358,6 +358,45 @@ describe("PriceOracle - Extended Coverage (merged)", function () {
     expect(usd).to.equal(ethers.utils.parseEther("10"));
   });
 
+  it("BAND staleness path reverts when feed timestamps are older than maxPriceAge", async function () {
+    await priceOracle.addToken(mockToken.address, 18, ethers.utils.parseEther("10"));
+    const BandStaleMock = await ethers.getContractFactory("BandStaleMock");
+    const stale = await BandStaleMock.deploy();
+    await priceOracle.setBandFeed(mockToken.address, stale.address, "MOCK", "USD");
+    // notStale modifier should revert on getUSDPrice/convert when BAND data is stale
+    await expect(priceOracle.getUSDPrice(mockToken.address)).to.be.reverted;
+    await expect(priceOracle.convertToUSD(mockToken.address, ethers.utils.parseEther("1"))).to.be.reverted;
+    await expect(priceOracle.convertFromUSD(mockToken.address, ethers.utils.parseEther("1"))).to.be.reverted;
+  });
+
+  it("convertToUSD handles decimals > 18 (e.g., 30) correctly", async function () {
+    const Token30 = await ethers.getContractFactory("MockERC20");
+    const token30 = await Token30.deploy("Max Decimals", "MD", 30);
+    await priceOracle.addToken(token30.address, 30, ethers.utils.parseEther("1")); // $1
+    // amount in token native decimals -> 1e30
+    const amount = ethers.BigNumber.from("1000000000000000000000000000000"); // 1e30
+    const usd = await priceOracle.convertToUSD(token30.address, amount);
+    expect(usd).to.equal(ethers.utils.parseEther("1"));
+  });
+
+  it("BAND refTime picks the minimum of base/quote timestamps (true branch)", async function () {
+    await priceOracle.addToken(mockToken.address, 18, ethers.utils.parseEther("1"));
+    const BandStaleMock = await ethers.getContractFactory("BandStaleMock");
+    const band = await BandStaleMock.deploy();
+    // Configure recent, non-stale times with base < quote to hit the true branch
+    const now = (await ethers.provider.getBlock("latest")).timestamp;
+    await band.setTimes(now - 30, now - 10); // both < maxPriceAge, base older than quote
+    await band.setPrice(ethers.utils.parseEther("2"));
+    await priceOracle.setBandFeed(mockToken.address, band.address, "MOCK", "USD");
+
+    // Should not revert (not stale) and use BAND price
+    const usd = await priceOracle.getUSDPrice(mockToken.address);
+    expect(usd).to.equal( ethers.utils.parseEther("2") );
+    // Also pass through notStale in a conversion path
+    const v = await priceOracle.convertToUSD(mockToken.address, ethers.utils.parseEther("1"));
+    expect(v).to.equal( ethers.utils.parseEther("2") );
+  });
+
   it("BAND pricing path with token decimals < 18 (6 decimals)", async function () {
     // Token with 6 decimals, manual price $10
     const Token6 = await ethers.getContractFactory("MockERC20");
