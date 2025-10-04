@@ -116,6 +116,11 @@ describe("TicketNFT Contract (aligned with current API)", function () {
         ticketNFT.connect(user1).setCryptoDrawAddress(cryptoDraw.address)
       ).to.be.revertedWith("Ownable: caller is not the owner");
     });
+
+    it("reverts when setting CryptoDraw address to zero", async function () {
+      const { ticketNFT, owner } = await loadFixture(deployTicketNFTFixture);
+      await expect(ticketNFT.connect(owner).setCryptoDrawAddress(ethers.constants.AddressZero)).to.be.revertedWith("Invalid address");
+    });
   });
 
   describe("Minting", function () {
@@ -176,6 +181,18 @@ describe("TicketNFT Contract (aligned with current API)", function () {
       await ticketNFT.connect(cryptoDraw).mint(user1.address, 1, 12345, 1, 1);
       const uri = await ticketNFT.tokenURI(0);
       expect(uri).to.include("data:application/json;base64,");
+    });
+  });
+
+  describe("Non-existent token queries", function () {
+    it("isTicketActive returns false for non-existent token", async function () {
+      const { ticketNFT } = await loadFixture(deployTicketNFTFixture);
+      expect(await ticketNFT.isTicketActive(999999)).to.equal(false);
+    });
+
+    it("getTicketStatus reverts with TokenNotExists for non-existent token", async function () {
+      const { ticketNFT } = await loadFixture(deployTicketNFTFixture);
+      await expect(ticketNFT.getTicketStatus(999999)).to.be.revertedWithCustomError(ticketNFT, 'TokenNotExists');
     });
   });
 });

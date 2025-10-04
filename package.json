@@ -51,8 +51,6 @@
     "interact:mainnet": "hardhat run scripts/interact.js --network harmony",
     "upgrade:testnet": "hardhat run scripts/upgrade.js --network harmony_testnet",
     "upgrade:mainnet": "hardhat run scripts/upgrade.js --network harmony",
-    "analyze": "slither . --print contract-summary",
-    "security": "mythril analyze contracts/ --solv 0.8.18",
     "format": "prettier --write \"contracts/**/*.sol\" \"scripts/**/*.js\" \"test/**/*.js\"",
     "lint": "solhint \"contracts/**/*.sol\"",
     "lint:fix": "solhint \"contracts/**/*.sol\" --fix",
