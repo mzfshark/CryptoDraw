@@ -310,6 +310,30 @@ describe("AgentProxy Contract", function () {
       expect(agentInfo.totalTicketsSold).to.equal(2);
       expect(agentInfo.totalCommissionEarned).to.equal(expectedTotalCommission);
     });
+
+    it("Should use default commission rate when agent commissionRate is zero", async function () {
+      const { agentProxy, owner, agent1, user1, cryptoDrawMock } = await loadFixture(deployAgentProxyFixture);
+
+      // Change default to a distinct value and register zero-rate agent
+      await agentProxy.connect(owner).setDefaultCommissionRate(777); // 7.77%
+      await agentProxy.connect(owner).registerAgent(agent1.address, 0);
+
+      const ticketPrice = ethers.utils.parseEther("2");
+      await cryptoDrawMock.setTicketPrice(ticketPrice);
+
+      await agentProxy.connect(user1).buyTicketThroughAgent(
+        1,
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        1,
+        agent1.address,
+        { value: ticketPrice }
+      );
+
+      const info = await agentProxy.getAgentInfo(agent1.address);
+      const expected = ticketPrice.mul(777).div(10000);
+      expect(info.totalCommissionEarned).to.equal(expected);
+      expect(info.totalTicketsSold).to.equal(1);
+    });
   });
 
   describe("Commission Management", function () {
@@ -368,6 +392,16 @@ describe("AgentProxy Contract", function () {
       await expect(
         agentProxy.connect(owner).updateAgentCommissionRate(agent1.address, 750)
       ).to.be.revertedWith("AgentNotFound");
+    });
+
+    it("Should revert when setting agent commission rate above max", async function () {
+      const { agentProxy, owner, agent1 } = await loadFixture(deployAgentProxyFixture);
+
+      await agentProxy.connect(owner).registerAgent(agent1.address, 500);
+
+      await expect(
+        agentProxy.connect(owner).updateAgentCommissionRate(agent1.address, 2001)
+      ).to.be.revertedWith("InvalidCommissionRate");
     });
   });
 
@@ -447,6 +481,41 @@ describe("AgentProxy Contract", function () {
       await expect(
         agentProxy.connect(user1).withdrawCommission()
       ).to.be.revertedWith("AgentNotFound");
+    });
+
+    it("Should allow withdrawal when agent is inactive but has commission accrued", async function () {
+      const { agentProxy, owner, agent1, user1, cryptoDrawMock } = await loadFixture(deployAgentProxyFixture);
+
+      // Register and create commission
+      await agentProxy.connect(owner).registerAgent(agent1.address, 1000); // 10%
+      const ticketPrice = ethers.utils.parseEther("1");
+      await cryptoDrawMock.setTicketPrice(ticketPrice);
+
+      await agentProxy.connect(user1).buyTicketThroughAgent(
+        1,
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+        1,
+        agent1.address,
+        { value: ticketPrice }
+      );
+
+      // Deactivate agent, but commission remains
+      await agentProxy.connect(owner).deactivateAgent(agent1.address);
+
+      const infoBefore = await agentProxy.getAgentInfo(agent1.address);
+      expect(infoBefore.isActive).to.equal(false);
+      expect(infoBefore.totalCommissionEarned).to.be.gt(0);
+
+      const balBefore = await ethers.provider.getBalance(agent1.address);
+      const tx = await agentProxy.connect(agent1).withdrawCommission();
+      const receipt = await tx.wait();
+      const gasUsed = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+      const balAfter = await ethers.provider.getBalance(agent1.address);
+
+      expect(balAfter).to.equal(balBefore.add(infoBefore.totalCommissionEarned).sub(gasUsed));
+
+      const infoAfter = await agentProxy.getAgentInfo(agent1.address);
+      expect(infoAfter.totalCommissionEarned).to.equal(0);
     });
   });
 
