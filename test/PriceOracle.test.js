@@ -331,4 +331,30 @@ describe("PriceOracle - Extended Coverage (merged)", function () {
     await expect(priceOracle.updatePrice(mockToken.address, ethers.utils.parseEther("2"))).to.emit(priceOracle, "PriceUpdated");
     await expect(priceOracle.setBandFeed(mockToken.address, mockToken.address, "ETH", "USD")).to.emit(priceOracle, "FeedConfigured");
   });
+
+  it("convertToUSD/convertFromUSD use Band feed price and revert to MANUAL after clearFeed", async function () {
+    // Add token with manual price = $10
+    await priceOracle.addToken(mockToken.address, 18, ethers.utils.parseEther("10"));
+
+    // Baseline with manual price
+    let usd = await priceOracle.convertToUSD(mockToken.address, ethers.utils.parseEther("1"));
+    expect(usd).to.equal(ethers.utils.parseEther("10"));
+
+    // Set BandMock with price = $2 and configure BAND feed
+    const BandMock = await ethers.getContractFactory("BandMock");
+    const band = await BandMock.deploy();
+    // BandMock default price is 2e18 ($2)
+    await priceOracle.setBandFeed(mockToken.address, band.address, "MOCK", "USD");
+
+    // Now conversions should use BAND price ($2)
+    usd = await priceOracle.convertToUSD(mockToken.address, ethers.utils.parseEther("1"));
+    expect(usd).to.equal(ethers.utils.parseEther("2"));
+    const tokensFrom2USD = await priceOracle.convertFromUSD(mockToken.address, ethers.utils.parseEther("2"));
+    expect(tokensFrom2USD).to.equal(ethers.utils.parseEther("1"));
+
+    // Clear BAND feed -> back to MANUAL price ($10)
+    await priceOracle.clearFeed(mockToken.address);
+    usd = await priceOracle.convertToUSD(mockToken.address, ethers.utils.parseEther("1"));
+    expect(usd).to.equal(ethers.utils.parseEther("10"));
+  });
 });

@@ -217,6 +217,24 @@ describe("GameLibrary - Coverage Tests", function () {
                 gameLibrary.unpackEasyLottoNumbers(0)
             ).to.be.revertedWithCustomError(gameLibrary, "InvalidPackedData");
         });
+
+        it("pack functions revert with InvalidNumber on invalid inputs", async function () {
+            // SuperSeven invalid: wrong count and out-of-range
+            await expect(gameLibrary.packSuperSevenNumbers([1,2,3,4,5,6]))
+                .to.be.revertedWithCustomError(gameLibrary, "InvalidNumber");
+            await expect(gameLibrary.packSuperSevenNumbers([0,1,2,3,4,5,10]))
+                .to.be.revertedWithCustomError(gameLibrary, "InvalidNumber");
+
+            // EasyLotto invalid arrays: too few, too many, out of range, duplicates
+            await expect(gameLibrary.packEasyLottoNumbers([1,2,3,4,5,6,7,8,9,10,11,12,13,14]))
+                .to.be.revertedWithCustomError(gameLibrary, "InvalidNumber");
+            await expect(gameLibrary.packEasyLottoNumbers([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21]))
+                .to.be.revertedWithCustomError(gameLibrary, "InvalidNumber");
+            await expect(gameLibrary.packEasyLottoNumbers([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14]))
+                .to.be.revertedWithCustomError(gameLibrary, "InvalidNumber");
+            await expect(gameLibrary.packEasyLottoNumbers([1,1,2,3,4,5,6,7,8,9,10,11,12,13,14]))
+                .to.be.revertedWithCustomError(gameLibrary, "InvalidNumber");
+        });
     });
 
     describe("Consistency Tests", function () {
@@ -254,6 +272,27 @@ describe("GameLibrary - Coverage Tests", function () {
             expect([...unpacked1].sort((a, b) => a - b)).to.deep.equal(sorted);
             expect([...unpacked2].sort((a, b) => a - b)).to.deep.equal(sorted);
             expect([...unpacked3].sort((a, b) => a - b)).to.deep.equal(sorted);
+        });
+    });
+
+    describe("Match Counting", function () {
+        it("countEasyLottoMatches counts overlapping bits correctly", async function () {
+            // Set A: numbers 1..15, Set B: numbers 11..25 -> overlap is 11..15 = 5
+            const setA = [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15];
+            const setB = [11,12,13,14,15,16,17,18,19,20,21,22,23,24,25];
+            const pA = await gameLibrary.packEasyLottoNumbers(setA);
+            const pB = await gameLibrary.packEasyLottoNumbers(setB);
+            const count = await gameLibrary.countEasyLottoMatches(pA, pB);
+            expect(count).to.equal(5);
+        });
+
+        it("countSuperSevenMatches counts matching digits", async function () {
+            const a = [1,2,3,4,5,6,7];
+            const b = [1,9,3,0,5,8,7]; // matches at positions 0,2,4,6 => 4
+            const pA = await gameLibrary.packSuperSevenNumbers(a);
+            const pB = await gameLibrary.packSuperSevenNumbers(b);
+            const count = await gameLibrary.countSuperSevenMatches(pA, pB);
+            expect(count).to.equal(4);
         });
     });
 });
