@@ -205,6 +205,32 @@ describe("AgentProxy Contract", function () {
       expect(event.args.agent).to.equal(agent1.address);
     });
 
+      it("Should revert with TransferFailed if receiver rejects ETH", async function () {
+        const { agentProxy, owner, user1, cryptoDrawMock } = await loadFixture(deployAgentProxyFixture);
+
+        // Deploy helper that cannot receive ETH and will call withdrawCommission()
+        const RevertingAgent = await ethers.getContractFactory("RevertingAgent");
+        const revertingAgent = await RevertingAgent.deploy();
+
+        // Register the helper as an agent and accrue commission to its address
+        await agentProxy.connect(owner).registerAgent(revertingAgent.address, 1000);
+        const ticketPrice = ethers.utils.parseEther("1");
+        await cryptoDrawMock.setTicketPrice(ticketPrice);
+
+        await agentProxy.connect(user1).buyTicketThroughAgent(
+          1,
+          [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+          1,
+          revertingAgent.address,
+          { value: ticketPrice }
+        );
+
+        // Now withdraw from within the contract so msg.sender == revertingAgent
+        await expect(
+          revertingAgent.triggerWithdraw(agentProxy.address)
+        ).to.be.revertedWith("TransferFailed");
+      });
+
     it("Should calculate and distribute commission correctly", async function () {
       const { agentProxy, owner, agent1, user1, cryptoDrawMock } = await loadFixture(deployAgentProxyFixture);
       await agentProxy.connect(owner).registerAgent(agent1.address, 500); // 5%
