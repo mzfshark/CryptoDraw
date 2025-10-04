@@ -298,6 +298,21 @@ describe("TicketNFT - Extended Coverage (merged)", function () {
     await expect(ticketNFT.tokenURI(id2)).to.be.reverted;
   });
 
+  it("getTicketBasic returns tuple and tokenURI reflects 'Burned' when status set via updateStatus", async function () {
+    const r = await (await ticketNFT.connect(minter).mint(user1.address, 0, 12345, 42, 1)).wait();
+    const id = r.events.find(e => e.event === 'TicketMinted').args.tokenId;
+    const basic = await ticketNFT.getTicketBasic(id);
+    expect(basic.player).to.equal(user1.address);
+    expect(basic.game).to.equal(0);
+    expect(basic.numbersPacked).to.equal(12345);
+    expect(basic.drawRound).to.equal(42);
+    // Set status to BURNED via updateStatus (don't burn token to allow tokenURI)
+    await ticketNFT.connect(minter).updateStatus(id, 3);
+    const uri = await ticketNFT.tokenURI(id);
+    const json = Buffer.from(uri.split(',')[1], 'base64').toString('utf8');
+    expect(json).to.include('Burned');
+  });
+
   it("isTicketActive returns true only when ACTIVE and roundsRemaining > 0", async function () {
     await ticketNFT.setCryptoDrawAddress(minter.address);
     const r = await (await ticketNFT.connect(minter).mint(user1.address, 0, 111, 1, 2)).wait();

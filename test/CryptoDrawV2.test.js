@@ -1245,6 +1245,100 @@ describe("CryptoDrawV2 Contract", function () {
       expect(await cryptoDraw.withdrawableBalances(user1.address)).to.equal(0);
     });
 
+    it('EasyLotto prize branches for 14/13/12/11 matches', async function () {
+      const { cryptoDraw, operator, owner, user1 } = await baseFixture();
+      await cryptoDraw.setGameConfig(1, ethers.utils.parseEther('2'), 4 * 86400, true);
+      await cryptoDraw.connect(operator).createDraw(1);
+      const drawId = await cryptoDraw.getCurrentDrawId(1);
+      const randomness = ethers.BigNumber.from('777');
+      const { numbers: winning } = computeEasyLottoWinning(randomness, drawId);
+      // Helper to buy, close and claim, returning prize credited
+      async function runCase(picked) {
+        const required = ethers.utils.parseEther('0.001');
+        const tx = await cryptoDraw.connect(user1).buyTicket(1, picked, 1, ethers.constants.AddressZero, required, ethers.constants.AddressZero, { value: required });
+        const rc = await tx.wait();
+        const tid = rc.events.find(e => e.event === 'TicketPurchased').args.ticketId;
+        await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](1, drawId, randomness);
+        const claim = await cryptoDraw.connect(user1).claimPrize(tid);
+        await claim.wait();
+        return await cryptoDraw.withdrawableBalances(user1.address);
+      }
+      // 15 matches already covered; now generate 14/13/12/11 by replacing n numbers
+      function withDifferences(n) {
+        const set = new Set(winning);
+        const picked = [...winning];
+        let replaced = 0;
+        let candidate = 26;
+        while (replaced < n) {
+          // find a number not in winning 1..25 and place it
+          while (candidate <= 35 && set.has(candidate)) candidate++;
+          picked[replaced] = (candidate % 25) + 1; // ensure 1..25
+          replaced++;
+          candidate++;
+        }
+        return picked;
+      }
+      const p14 = await runCase(withDifferences(1));
+      expect(p14).to.be.gt(0);
+      // fund and withdraw to reset withdrawable balance
+      await owner.sendTransaction({ to: cryptoDraw.address, value: p14 });
+      await cryptoDraw.connect(user1).withdrawPrize();
+
+      await cryptoDraw.connect(operator).createDraw(1);
+      const drawId2 = await cryptoDraw.getCurrentDrawId(1);
+      const randomness2 = ethers.BigNumber.from('778');
+      const { numbers: win2 } = computeEasyLottoWinning(randomness2, drawId2);
+      const p13 = await (async () => {
+        const required = ethers.utils.parseEther('0.001');
+        const picked = (() => { const arr = [...win2]; for (let i=0;i<2;i++) arr[i] = ((26+i)%25)+1; return arr; })();
+        const tx = await cryptoDraw.connect(user1).buyTicket(1, picked, 1, ethers.constants.AddressZero, required, ethers.constants.AddressZero, { value: required });
+        const rc = await tx.wait();
+        const tid = rc.events.find(e => e.event === 'TicketPurchased').args.ticketId;
+        await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](1, drawId2, randomness2);
+        await (await cryptoDraw.connect(user1).claimPrize(tid)).wait();
+        return await cryptoDraw.withdrawableBalances(user1.address);
+      })();
+      expect(p13).to.be.gt(0);
+      await owner.sendTransaction({ to: cryptoDraw.address, value: p13 });
+      await cryptoDraw.connect(user1).withdrawPrize();
+
+      // 12 matches
+      await cryptoDraw.connect(operator).createDraw(1);
+      const drawId3 = await cryptoDraw.getCurrentDrawId(1);
+      const randomness3 = ethers.BigNumber.from('779');
+      const { numbers: win3 } = computeEasyLottoWinning(randomness3, drawId3);
+      const p12 = await (async () => {
+        const required = ethers.utils.parseEther('0.001');
+        const arr = [...win3]; for (let i=0;i<3;i++) arr[i] = ((28+i)%25)+1;
+        const tx = await cryptoDraw.connect(user1).buyTicket(1, arr, 1, ethers.constants.AddressZero, required, ethers.constants.AddressZero, { value: required });
+        const rc = await tx.wait();
+        const tid = rc.events.find(e => e.event === 'TicketPurchased').args.ticketId;
+        await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](1, drawId3, randomness3);
+        await (await cryptoDraw.connect(user1).claimPrize(tid)).wait();
+        return await cryptoDraw.withdrawableBalances(user1.address);
+      })();
+      expect(p12).to.be.gt(0);
+      await owner.sendTransaction({ to: cryptoDraw.address, value: p12 });
+      await cryptoDraw.connect(user1).withdrawPrize();
+
+      // 11 matches
+      await cryptoDraw.connect(operator).createDraw(1);
+      const drawId4 = await cryptoDraw.getCurrentDrawId(1);
+      const randomness4 = ethers.BigNumber.from('780');
+      const { numbers: win4 } = computeEasyLottoWinning(randomness4, drawId4);
+      const p11 = await (async () => {
+        const required = ethers.utils.parseEther('0.001');
+        const arr = [...win4]; for (let i=0;i<4;i++) arr[i] = ((31+i)%25)+1;
+        const tx = await cryptoDraw.connect(user1).buyTicket(1, arr, 1, ethers.constants.AddressZero, required, ethers.constants.AddressZero, { value: required });
+        const rc = await tx.wait();
+        const tid = rc.events.find(e => e.event === 'TicketPurchased').args.ticketId;
+        await cryptoDraw.connect(operator)['closeDraw(uint8,uint32,uint256)'](1, drawId4, randomness4);
+        await (await cryptoDraw.connect(user1).claimPrize(tid)).wait();
+        return await cryptoDraw.withdrawableBalances(user1.address);
+      })();
+      expect(p11).to.be.gt(0);
+    });
+
     it('configureGame wrapper (admin-only) updates config', async function () {
       const { cryptoDraw, user1 } = await baseFixture();
       // non-admin cannot call
