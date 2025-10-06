@@ -4,11 +4,13 @@
 const hre = require("hardhat");
 
 async function main() {
-  console.log("🚀 Starting CryptoDraw deployment on Harmony...\n");
+  console.log("Starting CryptoDraw deployment on Harmony...\n");
 
   const [deployer] = await ethers.getSigners();
   const net = await ethers.provider.getNetwork();
-  console.log("Network:", hre.network.name, `(${net.chainId.toString()})`);
+  const networkName = hre.network.name;
+  const networkKey = networkName === 'harmony_testnet' ? 'harmony-testnet' : 'harmony';
+  console.log("Network:", networkName, `(${net.chainId.toString()})`);
   console.log("Deploying contracts with account:", deployer.address);
   console.log(
     "Account balance:",
@@ -33,7 +35,7 @@ async function main() {
   // Helper: Retry wrapper that bumps gasPrice on underpriced errors
   async function withGasRetry(sendFn, label) {
     let attempts = 0;
-    while (attempts < 6) {
+    while (attempts < 10) {
       try {
         const res = await sendFn();
         return res;
@@ -44,8 +46,18 @@ async function main() {
           msg.includes("replacement") ||
           msg.toLowerCase().includes("fee too low")
         ) {
-          gasPrice = gasPrice.add(ONE_GWEI.mul(2)); // +2 gwei each retry
-          console.log(`⛽ ${label}: bumping gasPrice to ${gasPrice.toString()} and retrying...`);
+          // Bump ~+25% over previous and ensure +1 gwei floor
+          const prev = gasPrice;
+          gasPrice = gasPrice.mul(125).div(100);
+          if (gasPrice.lte(prev)) gasPrice = prev.add(ONE_GWEI);
+          // Also re-fetch current network gas and take 130% of it if higher
+          try {
+            const netNow = await ethers.provider.getGasPrice();
+            const netTarget = netNow.mul(13).div(10);
+            if (netTarget.gt(gasPrice)) gasPrice = netTarget;
+          } catch (_) {}
+          if (gasPrice.lt(minGwei)) gasPrice = minGwei;
+          console.log(` ${label}: attempt ${attempts + 1} → bump gasPrice to ${gasPrice.toString()} wei and retrying...`);
           attempts += 1;
           continue;
         }
@@ -61,21 +73,21 @@ async function main() {
     initialONEPriceUSD: ethers.utils.parseEther("0.015"),
 
     // Wallet addresses - MUST UPDATE
-    treasuryWallet: "0x0000000000000000000000000000000000000001", // UPDATE
-    prizeWallet: "0x0000000000000000000000000000000000000002", // UPDATE
-    projectFund: "0x0000000000000000000000000000000000000003", // UPDATE
-    grantFund: "0x0000000000000000000000000000000000000004", // UPDATE
-    operationFund: "0x0000000000000000000000000000000000000005", // UPDATE
+    treasuryWallet: process.env.TREASURY_WALLET || "0x0000000000000000000000000000000000000001", // UPDATE
+    prizeWallet: process.env.PRIZE_WALLET || "0x0000000000000000000000000000000000000002", // UPDATE
+    projectFund: process.env.PROJECT_FUND || "0x0000000000000000000000000000000000000003", // UPDATE
+    grantFund: process.env.GRANT_FUND || "0x0000000000000000000000000000000000000004", // UPDATE
+    operationFund: process.env.OPERATION_FUND || "0x0000000000000000000000000000000000000005", // UPDATE
 
     // Example deppegs tokens on Harmony (UPDATE with actual addresses)
     tokens: {
-      wONE: "0xcF664087a5bB0237a0BAd6742852ec6c8d69A27a", // Wrapped ONE
+      wONE: process.env.WONE_TOKEN || "0xcF664087a5bB0237a0BAd6742852ec6c8d69A27a", // Wrapped ONE
       // Add more deppegs tokens here
     },
   };
 
   // 1. Deploy PriceOracle
-  console.log("📊 Deploying PriceOracle...");
+  console.log("[deploy] Deploying PriceOracle...");
   const PriceOracle = await ethers.getContractFactory("PriceOracle");
   const priceOracle = await withGasRetry(
     () => PriceOracle.deploy(config.initialONEPriceUSD, { gasPrice }),
@@ -85,7 +97,7 @@ async function main() {
   console.log("✅ PriceOracle deployed to:", priceOracle.address, "\n");
 
   // 2. Deploy TicketNFT
-  console.log("🎫 Deploying TicketNFT...");
+  console.log("[deploy] Deploying TicketNFT...");
   const TicketNFT = await ethers.getContractFactory("TicketNFT");
   const ticketNFT = await withGasRetry(
     () => TicketNFT.deploy({ gasPrice }),
@@ -95,7 +107,7 @@ async function main() {
   console.log("✅ TicketNFT deployed to:", ticketNFT.address, "\n");
 
   // 3. Deploy GameLibrary
-  console.log("📚 Deploying GameLibrary...");
+  console.log("[deploy] Deploying GameLibrary...");
   const GameLibrary = await ethers.getContractFactory("GameLibrary");
   const gameLibrary = await withGasRetry(
     () => GameLibrary.deploy({ gasPrice }),
@@ -105,12 +117,8 @@ async function main() {
   console.log("✅ GameLibrary deployed to:", gameLibrary.address, "\n");
 
   // 4. Deploy CryptoDraw (link with GameLibrary)
-  console.log("🎰 Deploying CryptoDrawV2...");
-  const CryptoDraw = await ethers.getContractFactory("CryptoDraw", {
-    libraries: {
-      GameLibrary: gameLibrary.address,
-    },
-  });
+  console.log("[deploy] Deploying CryptoDrawV2...");
+  const CryptoDraw = await ethers.getContractFactory("CryptoDraw");
 
   const cryptoDraw = await withGasRetry(
     () => CryptoDraw.deploy(
@@ -129,7 +137,7 @@ async function main() {
   console.log("✅ CryptoDrawV2 deployed to:", cryptoDraw.address, "\n");
 
   // 5. Configure TicketNFT
-  console.log("⚙️  Configuring TicketNFT...");
+  console.log("[config] Configuring TicketNFT...");
   let tx = await withGasRetry(
     () => ticketNFT.setCryptoDrawAddress(cryptoDraw.address, { gasPrice }),
     "TicketNFT.setCryptoDrawAddress"
@@ -138,7 +146,7 @@ async function main() {
   console.log("✅ TicketNFT configured\n");
 
   // 6. Add supported tokens
-  console.log("💎 Adding supported tokens...");
+  console.log("[config] Adding supported tokens...");
 
   // Add wONE to PriceOracle (example: $0.015 per wONE)
   tx = await withGasRetry(
@@ -170,7 +178,7 @@ async function main() {
   console.log("✅ Native ONE added to CryptoDraw\n");
 
   // 7. Grant roles (optional - for multi-sig setups)
-  console.log("👥 Setting up roles...");
+  console.log("[config] Setting up roles...");
   const OPERATOR_ROLE = await cryptoDraw.OPERATOR_ROLE();
   const AGENT_ROLE = await cryptoDraw.AGENT_ROLE();
 
@@ -184,35 +192,85 @@ async function main() {
 
   // Summary
   console.log("=".repeat(60));
-  console.log("🎉 Deployment Complete!");
+  console.log(" Deployment Complete!");
   console.log("=".repeat(60));
-  console.log("\n📋 Contract Addresses:");
+  console.log("\n Contract Addresses:");
   console.log("PriceOracle:   ", priceOracle.address);
   console.log("TicketNFT:     ", ticketNFT.address);
   console.log("GameLibrary:   ", gameLibrary.address);
   console.log("CryptoDrawV2:  ", cryptoDraw.address);
 
-  console.log("\n📝 Next Steps:");
+  console.log("\n Next Steps:");
   console.log("1. Verify contracts on explorer");
   console.log("2. Update token prices in PriceOracle");
   console.log("3. Grant AGENT_ROLE to authorized agents");
   console.log("4. Fund prizeWallet with wONE for payouts");
   console.log("5. Test with small transactions first");
 
-  console.log("\n🔍 Verification Commands:");
+  console.log("\n Verification Commands:");
   console.log(
-    `npx hardhat verify --network harmony ${priceOracle.address} "${config.initialONEPriceUSD}"`,
+    `npx hardhat verify --network ${networkName} ${priceOracle.address} "${config.initialONEPriceUSD}"`,
   );
-  console.log(`npx hardhat verify --network harmony ${ticketNFT.address}`);
-  console.log(`npx hardhat verify --network harmony ${gameLibrary.address}`);
+  console.log(`npx hardhat verify --network ${networkName} ${ticketNFT.address}`);
+  console.log(`npx hardhat verify --network ${networkName} ${gameLibrary.address}`);
   console.log(
-    `npx hardhat verify --network harmony ${cryptoDraw.address} ${ticketNFT.address} ${priceOracle.address} ${config.treasuryWallet} ${config.prizeWallet} ${config.projectFund} ${config.grantFund} ${config.operationFund}`,
+    `npx hardhat verify --network ${networkName} ${cryptoDraw.address} ${ticketNFT.address} ${priceOracle.address} ${config.treasuryWallet} ${config.prizeWallet} ${config.projectFund} ${config.grantFund} ${config.operationFund}`,
   );
+
+  // Optional: Auto-verify contracts (best-effort)
+  try {
+    const confirmations = net.chainId === 1 ? 6 : 2;
+    console.log(`\n Waiting ${confirmations} confirmations before verification...`);
+    // Wait for deploy tx confirmations
+    const poTx = priceOracle.deployTransaction; if (poTx?.wait) await poTx.wait(confirmations);
+    const tnTx = ticketNFT.deployTransaction;  if (tnTx?.wait) await tnTx.wait(confirmations);
+    const glTx = gameLibrary.deployTransaction; if (glTx?.wait) await glTx.wait(confirmations);
+    const cdTx = cryptoDraw.deployTransaction; if (cdTx?.wait) await cdTx.wait(confirmations);
+
+    console.log("\n[verify] Auto-verifying on explorer...");
+    // PriceOracle
+    await hre.run('verify:verify', {
+      address: priceOracle.address,
+      constructorArguments: [config.initialONEPriceUSD],
+      conttract: "contracts/PriceOracle.sol:PriceOracle"
+    }).then(() => console.log('✅ Verified: PriceOracle')).catch((e) => console.warn('⚠️ Verify PriceOracle:', e?.message || e));
+
+    // TicketNFT
+    await hre.run('verify:verify', {
+      address: ticketNFT.address,
+      constructorArguments: [],
+      contract: "contracts/TicketNFT.sol:TicketNFT"
+    }).then(() => console.log('✅ Verified: TicketNFT')).catch((e) => console.warn('⚠️ Verify TicketNFT:', e?.message || e));
+
+    // GameLibrary
+    await hre.run('verify:verify', {
+      address: gameLibrary.address,
+      contract: "contracts/GameLibrary.sol:GameLibrary",
+      constructorArguments: []
+    }).then(() => console.log('✅ Verified: GameLibrary')).catch((e) => console.warn('⚠️ Verify GameLibrary:', e?.message || e));
+
+    // CryptoDraw
+    await hre.run('verify:verify', {
+      address: cryptoDraw.address,
+      constructorArguments: [
+        ticketNFT.address,
+        priceOracle.address,
+        config.treasuryWallet,
+        config.prizeWallet,
+        config.projectFund,
+        config.grantFund,
+        config.operationFund,
+      ],
+      contract: "contracts/CryptoDrawV2.sol:CryptoDraw"
+    }).then(() => console.log('✅ Verified: CryptoDrawV2')).catch((e) => console.warn('⚠️ Verify CryptoDrawV2:', e?.message || e));
+  } catch (err) {
+    console.warn('⚠️ Auto-verification skipped or failed:', err?.message || String(err));
+  }
 
   // Save deployment info
   const fs = require("fs");
   const deploymentInfo = {
-    network: "harmony",
+    network: networkName,
     timestamp: new Date().toISOString(),
     deployer: deployer.address,
     contracts: {
@@ -224,11 +282,9 @@ async function main() {
     config: config,
   };
 
-  fs.writeFileSync(
-    "./deployment-harmony.json",
-    JSON.stringify(deploymentInfo, null, 2),
-  );
-  console.log("\n💾 Deployment info saved to deployment-harmony.json");
+  const fileName = `./deployment-${networkKey}.json`;
+  fs.writeFileSync(fileName, JSON.stringify(deploymentInfo, null, 2));
+  console.log(`\n💾 Deployment info saved to ${fileName}`);
 }
 
 main()

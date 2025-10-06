@@ -1,17 +1,16 @@
 const { skip } = require('node:test');
 
+// Minimal plugins and conditional verify to avoid runtime crashes during deploy
 require('@nomiclabs/hardhat-ethers');
-// Register Waffle matchers (ethers v5 compatible)
-try {
-  require('@nomiclabs/hardhat-waffle');
-} catch (e) {
-  console.log('Warning: @nomiclabs/hardhat-waffle not installed');
-}
-// Register chai matchers for custom errors
-try {
-  require('@nomicfoundation/hardhat-chai-matchers');
-} catch (e) {
-  console.log('Warning: @nomicfoundation/hardhat-chai-matchers not installed');
+try { require('@nomiclabs/hardhat-waffle'); } catch { /* optional */ }
+try { require('@nomicfoundation/hardhat-chai-matchers'); } catch { /* optional */ }
+try { require('hardhat-gas-reporter'); } catch { /* optional */ }
+
+// Only load verify plugin when needed (CLI task or forced via env)
+const shouldLoadVerify = process.argv.some((a) => /\bverify\b/.test(a)) || process.env.HARDHAT_LOAD_VERIFY === '1';
+if (shouldLoadVerify) {
+  try { require('@nomicfoundation/hardhat-verify'); }
+  catch (e) { try { require('@nomiclabs/hardhat-etherscan'); } catch (_) { console.log('Warning: no verify plugin available'); } }
 }
 // Register coverage plugin
 try {
