@@ -115,7 +115,7 @@ module.exports = {
   etherscan: {
     apiKey: {
       harmony: process.env.HARMONY_EXPLORER_API_KEY || "dummy",
-      harmonyTestnet: process.env.HARMONY_EXPLORER_API_KEY || "dummy",
+      harmony_testnet: process.env.HARMONY_EXPLORER_API_KEY || "dummy",
       mainnet: process.env.ETHERSCAN_API_KEY || "",
       sepolia: process.env.ETHERSCAN_API_KEY || "",
       bsc: process.env.BSCSCAN_API_KEY || "",
@@ -131,7 +131,7 @@ module.exports = {
         }
       },
       {
-        network: "harmonyTestnet",  
+        network: "harmony_testnet",  
         chainId: 1666700000,
         urls: {
           apiURL: "https://ctrver.t.hmny.io/verify?network=testnet",

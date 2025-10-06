@@ -26,8 +26,34 @@ async function main() {
     } catch (_) {}
   }
   if (gasPrice.lt(minGwei)) gasPrice = minGwei;
+  const ONE_GWEI = ethers.BigNumber.from("1000000000");
   const overrides = { gasPrice };
   console.log("Using gasPrice:", gasPrice.toString(), "wei\n");
+
+  // Helper: Retry wrapper that bumps gasPrice on underpriced errors
+  async function withGasRetry(sendFn, label) {
+    let attempts = 0;
+    while (attempts < 6) {
+      try {
+        const res = await sendFn();
+        return res;
+      } catch (e) {
+        const msg = (e && e.message) || String(e);
+        if (
+          msg.includes("underpriced") ||
+          msg.includes("replacement") ||
+          msg.toLowerCase().includes("fee too low")
+        ) {
+          gasPrice = gasPrice.add(ONE_GWEI.mul(2)); // +2 gwei each retry
+          console.log(`⛽ ${label}: bumping gasPrice to ${gasPrice.toString()} and retrying...`);
+          attempts += 1;
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new Error(`${label}: failed after ${attempts} attempts`);
+  }
 
   // Configuration - UPDATE THESE VALUES
   const config = {
@@ -51,21 +77,30 @@ async function main() {
   // 1. Deploy PriceOracle
   console.log("📊 Deploying PriceOracle...");
   const PriceOracle = await ethers.getContractFactory("PriceOracle");
-  const priceOracle = await PriceOracle.deploy(config.initialONEPriceUSD, overrides);
+  const priceOracle = await withGasRetry(
+    () => PriceOracle.deploy(config.initialONEPriceUSD, { gasPrice }),
+    "PriceOracle.deploy"
+  );
   await priceOracle.deployed();
   console.log("✅ PriceOracle deployed to:", priceOracle.address, "\n");
 
   // 2. Deploy TicketNFT
   console.log("🎫 Deploying TicketNFT...");
   const TicketNFT = await ethers.getContractFactory("TicketNFT");
-  const ticketNFT = await TicketNFT.deploy(overrides);
+  const ticketNFT = await withGasRetry(
+    () => TicketNFT.deploy({ gasPrice }),
+    "TicketNFT.deploy"
+  );
   await ticketNFT.deployed();
   console.log("✅ TicketNFT deployed to:", ticketNFT.address, "\n");
 
   // 3. Deploy GameLibrary
   console.log("📚 Deploying GameLibrary...");
   const GameLibrary = await ethers.getContractFactory("GameLibrary");
-  const gameLibrary = await GameLibrary.deploy(overrides);
+  const gameLibrary = await withGasRetry(
+    () => GameLibrary.deploy({ gasPrice }),
+    "GameLibrary.deploy"
+  );
   await gameLibrary.deployed();
   console.log("✅ GameLibrary deployed to:", gameLibrary.address, "\n");
 
@@ -77,22 +112,28 @@ async function main() {
     },
   });
 
-  const cryptoDraw = await CryptoDraw.deploy(
+  const cryptoDraw = await withGasRetry(
+    () => CryptoDraw.deploy(
     ticketNFT.address,
     priceOracle.address,
     config.treasuryWallet,
     config.prizeWallet,
     config.projectFund,
     config.grantFund,
-    config.operationFund,
-    overrides,
+      config.operationFund,
+      { gasPrice }
+    ),
+    "CryptoDraw.deploy"
   );
   await cryptoDraw.deployed();
   console.log("✅ CryptoDrawV2 deployed to:", cryptoDraw.address, "\n");
 
   // 5. Configure TicketNFT
   console.log("⚙️  Configuring TicketNFT...");
-  let tx = await ticketNFT.setCryptoDrawAddress(cryptoDraw.address, overrides);
+  let tx = await withGasRetry(
+    () => ticketNFT.setCryptoDrawAddress(cryptoDraw.address, { gasPrice }),
+    "TicketNFT.setCryptoDrawAddress"
+  );
   await tx.wait();
   console.log("✅ TicketNFT configured\n");
 
@@ -100,22 +141,31 @@ async function main() {
   console.log("💎 Adding supported tokens...");
 
   // Add wONE to PriceOracle (example: $0.015 per wONE)
-  tx = await priceOracle.addToken(
+  tx = await withGasRetry(
+    () => priceOracle.addToken(
     config.tokens.wONE,
     18, // decimals
     config.initialONEPriceUSD,
-    overrides,
+      { gasPrice }
+    ),
+    "PriceOracle.addToken(wONE)"
   );
   await tx.wait();
   console.log("✅ wONE added to PriceOracle");
 
   // Add wONE to CryptoDraw
-  tx = await cryptoDraw.setSupportedToken(config.tokens.wONE, true, overrides);
+  tx = await withGasRetry(
+    () => cryptoDraw.setSupportedToken(config.tokens.wONE, true, { gasPrice }),
+    "CryptoDraw.setSupportedToken(wONE)"
+  );
   await tx.wait();
   console.log("✅ wONE added to CryptoDraw");
 
   // Add native ONE (address(0))
-  tx = await cryptoDraw.setSupportedToken(ethers.constants.AddressZero, true, overrides);
+  tx = await withGasRetry(
+    () => cryptoDraw.setSupportedToken(ethers.constants.AddressZero, true, { gasPrice }),
+    "CryptoDraw.setSupportedToken(native)"
+  );
   await tx.wait();
   console.log("✅ Native ONE added to CryptoDraw\n");
 
@@ -125,7 +175,10 @@ async function main() {
   const AGENT_ROLE = await cryptoDraw.AGENT_ROLE();
 
   // Example: Grant operator role to deployer (can change later)
-  tx = await cryptoDraw.grantRole(OPERATOR_ROLE, deployer.address, overrides);
+  tx = await withGasRetry(
+    () => cryptoDraw.grantRole(OPERATOR_ROLE, deployer.address, { gasPrice }),
+    "CryptoDraw.grantRole(OPERATOR)"
+  );
   await tx.wait();
   console.log("✅ Operator role granted to deployer\n");
 
