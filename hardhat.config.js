@@ -9,8 +9,20 @@ try { require('hardhat-gas-reporter'); } catch { /* optional */ }
 // Only load verify plugin when needed (CLI task or forced via env)
 const shouldLoadVerify = process.argv.some((a) => /\bverify\b/.test(a)) || process.env.HARDHAT_LOAD_VERIFY === '1';
 if (shouldLoadVerify) {
-  try { require('@nomicfoundation/hardhat-verify'); }
-  catch (e) { try { require('@nomiclabs/hardhat-etherscan'); } catch (_) { console.log('Warning: no verify plugin available'); } }
+  // Prefer the CJS-compatible etherscan plugin to avoid ESM import issues
+  try {
+    require('@nomiclabs/hardhat-etherscan');
+    console.log('[verify] Loaded @nomiclabs/hardhat-etherscan');
+  } catch (e) {
+    console.log('Warning: verify plugin not available (@nomiclabs/hardhat-etherscan)', e && e.message);
+    // As a last resort, try the foundation plugin (may fail on Node >=20 due to ESM)
+    try {
+      require('@nomicfoundation/hardhat-verify');
+      console.log('[verify] Loaded @nomicfoundation/hardhat-verify');
+    } catch (e2) {
+      console.log('Warning: no verify plugin available');
+    }
+  }
 }
 // Register coverage plugin
 try {

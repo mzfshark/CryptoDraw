@@ -6,9 +6,34 @@ const hre = require("hardhat");
 async function main() {
   console.log("Starting CryptoDraw deployment on Harmony...\n");
 
-  const [deployer] = await ethers.getSigners();
-  const net = await ethers.provider.getNetwork();
   const networkName = hre.network.name;
+  const chainId = networkName === 'harmony_testnet' ? 1666700000 : 1666600000;
+  // Build a robust provider with fallback endpoints
+  const urls = [];
+  if (networkName === 'harmony_testnet') {
+    if (process.env.HARMONY_TESTNET_URL) urls.push(process.env.HARMONY_TESTNET_URL);
+    if (process.env.HARMONY_RPC_BACKUP) urls.push(process.env.HARMONY_RPC_BACKUP);
+    if (process.env.POKT_HARMONY_URL) urls.push(process.env.POKT_HARMONY_URL);
+  } else {
+    if (process.env.HARMONY_MAINNET_URL) urls.push(process.env.HARMONY_MAINNET_URL);
+    if (process.env.HARMONY_RPC_BACKUP) urls.push(process.env.HARMONY_RPC_BACKUP);
+    if (process.env.POKT_HARMONY_URL) urls.push(process.env.POKT_HARMONY_URL);
+  }
+  // Always ensure at least one default URL
+  if (urls.length === 0) {
+    urls.push(networkName === 'harmony_testnet' ? 'https://api.s0.b.hmny.io' : 'https://api.harmony.one');
+  }
+  const providers = urls.map((u) => new ethers.providers.StaticJsonRpcProvider(u, { chainId, name: networkName }));
+  const provider = providers.length > 1 ? new ethers.providers.FallbackProvider(providers, 1) : providers[0];
+  // Warm up provider to cache network
+  await provider.getNetwork();
+  await provider.getBlockNumber();
+
+  // Use explicit signer from PRIVATE_KEY tied to our provider
+  if (!process.env.PRIVATE_KEY) throw new Error('Missing PRIVATE_KEY in environment');
+  const deployer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
+  const net = await provider.getNetwork();
+  
   const networkKey = networkName === 'harmony_testnet' ? 'harmony-testnet' : 'harmony';
   console.log("Network:", networkName, `(${net.chainId.toString()})`);
   console.log("Deploying contracts with account:", deployer.address);
@@ -20,7 +45,7 @@ async function main() {
 
   // Determine gas price (use env override if provided). Harmony nodes can reject 1 gwei as underpriced.
   const minGwei = ethers.BigNumber.from("2000000000"); // 2 gwei minimum
-  let networkGasPrice = await ethers.provider.getGasPrice();
+  let networkGasPrice = await provider.getGasPrice();
   let gasPrice = networkGasPrice.mul(12).div(10); // +20%
   if (process.env.GAS_PRICE) {
     try {
@@ -52,7 +77,7 @@ async function main() {
           if (gasPrice.lte(prev)) gasPrice = prev.add(ONE_GWEI);
           // Also re-fetch current network gas and take 130% of it if higher
           try {
-            const netNow = await ethers.provider.getGasPrice();
+            const netNow = await provider.getGasPrice();
             const netTarget = netNow.mul(13).div(10);
             if (netTarget.gt(gasPrice)) gasPrice = netTarget;
           } catch (_) {}
@@ -88,7 +113,7 @@ async function main() {
 
   // 1. Deploy PriceOracle
   console.log("[deploy] Deploying PriceOracle...");
-  const PriceOracle = await ethers.getContractFactory("PriceOracle");
+  const PriceOracle = await ethers.getContractFactory("PriceOracle", deployer);
   const priceOracle = await withGasRetry(
     () => PriceOracle.deploy(config.initialONEPriceUSD, { gasPrice }),
     "PriceOracle.deploy"
@@ -98,7 +123,7 @@ async function main() {
 
   // 2. Deploy TicketNFT
   console.log("[deploy] Deploying TicketNFT...");
-  const TicketNFT = await ethers.getContractFactory("TicketNFT");
+  const TicketNFT = await ethers.getContractFactory("TicketNFT", deployer);
   const ticketNFT = await withGasRetry(
     () => TicketNFT.deploy({ gasPrice }),
     "TicketNFT.deploy"
@@ -108,7 +133,7 @@ async function main() {
 
   // 3. Deploy GameLibrary
   console.log("[deploy] Deploying GameLibrary...");
-  const GameLibrary = await ethers.getContractFactory("GameLibrary");
+  const GameLibrary = await ethers.getContractFactory("GameLibrary", deployer);
   const gameLibrary = await withGasRetry(
     () => GameLibrary.deploy({ gasPrice }),
     "GameLibrary.deploy"
@@ -118,7 +143,7 @@ async function main() {
 
   // 4. Deploy CryptoDraw (link with GameLibrary)
   console.log("[deploy] Deploying CryptoDrawV2...");
-  const CryptoDraw = await ethers.getContractFactory("CryptoDraw");
+  const CryptoDraw = await ethers.getContractFactory("CryptoDraw", deployer);
 
   const cryptoDraw = await withGasRetry(
     () => CryptoDraw.deploy(
@@ -178,17 +203,32 @@ async function main() {
   console.log("✅ Native ONE added to CryptoDraw\n");
 
   // 7. Grant roles (optional - for multi-sig setups)
-  console.log("[config] Setting up roles...");
-  const OPERATOR_ROLE = await cryptoDraw.OPERATOR_ROLE();
-  const AGENT_ROLE = await cryptoDraw.AGENT_ROLE();
+  if (process.env.GRANT_ROLES === '1') {
+    console.log("[config] Setting up roles...");
+    try {
+      const DEFAULT_ADMIN_ROLE = await cryptoDraw.DEFAULT_ADMIN_ROLE();
+      const OPERATOR_ROLE = await cryptoDraw.OPERATOR_ROLE();
+      const AGENT_ROLE = await cryptoDraw.AGENT_ROLE();
 
-  // Example: Grant operator role to deployer (can change later)
-  tx = await withGasRetry(
-    () => cryptoDraw.grantRole(OPERATOR_ROLE, deployer.address, { gasPrice }),
-    "CryptoDraw.grantRole(OPERATOR)"
-  );
-  await tx.wait();
-  console.log("✅ Operator role granted to deployer\n");
+      const isDeployerAdmin = await cryptoDraw.hasRole(DEFAULT_ADMIN_ROLE, deployer.address);
+      if (!isDeployerAdmin) {
+        console.warn("⚠️ Deployer não é DEFAULT_ADMIN_ROLE. Pulando concessão automática de roles.");
+        console.warn("ℹ️ Para conceder roles, execute com a carteira admin (DEFAULT_ADMIN_ROLE) usando scripts/admin/grant-role.js");
+      } else {
+        // Example: Grant operator role to deployer (can change later)
+        tx = await withGasRetry(
+          () => cryptoDraw.grantRole(OPERATOR_ROLE, deployer.address, { gasPrice }),
+          "CryptoDraw.grantRole(OPERATOR)"
+        );
+        await tx.wait();
+        console.log("✅ Operator role granted to deployer\n");
+      }
+    } catch (e) {
+      console.warn('⚠️ Role setup skipped due to error:', e?.message || String(e));
+    }
+  } else {
+    console.log("[config] Skipping role grants (set GRANT_ROLES=1 to enable)");
+  }
 
   // Summary
   console.log("=".repeat(60));
@@ -232,7 +272,7 @@ async function main() {
     await hre.run('verify:verify', {
       address: priceOracle.address,
       constructorArguments: [config.initialONEPriceUSD],
-      conttract: "contracts/PriceOracle.sol:PriceOracle"
+      contract: "contracts/PriceOracle.sol:PriceOracle"
     }).then(() => console.log('✅ Verified: PriceOracle')).catch((e) => console.warn('⚠️ Verify PriceOracle:', e?.message || e));
 
     // TicketNFT
@@ -245,7 +285,7 @@ async function main() {
     // GameLibrary
     await hre.run('verify:verify', {
       address: gameLibrary.address,
-      contract: "contracts/GameLibrary.sol:GameLibrary",
+      contract: "contracts/libraries/GameLibrary.sol:GameLibrary",
       constructorArguments: []
     }).then(() => console.log('✅ Verified: GameLibrary')).catch((e) => console.warn('⚠️ Verify GameLibrary:', e?.message || e));
 
