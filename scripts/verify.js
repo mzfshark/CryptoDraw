@@ -47,7 +47,7 @@ async function main() {
         console.log("🔍 Verifying GameLibrary...");
         await hre.run("verify:verify", {
             address: contracts.gameLibrary,
-            contract: "contracts/libraries/GameLibrary.sol:GameLibrary",
+            contract: "contracts/GameLibrary.sol:GameLibrary",
             constructorArguments: []
         });
         console.log("✅ GameLibrary verified");
