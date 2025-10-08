@@ -137,16 +137,17 @@ module.exports = {
         network: "harmony",
         chainId: 1666600000,
         urls: {
-          apiURL: "https://ctrver.t.hmny.io/verify",
-          browserURL: "https://explorer.harmony.one/"
+          // Harmony explorer is Blockscout-based; use its /api endpoint
+          apiURL: "https://explorer.harmony.one/api",
+          browserURL: "https://explorer.harmony.one"
         }
       },
       {
         network: "harmony_testnet",  
         chainId: 1666700000,
         urls: {
-          apiURL: "https://ctrver.t.hmny.io/verify?network=testnet",
-          browserURL: "https://explorer.testnet.harmony.one/"
+          apiURL: "https://explorer.testnet.harmony.one/api",
+          browserURL: "https://explorer.testnet.harmony.one"
         }
       }
     ]
